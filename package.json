@@ -1,0 +1,36 @@
+{
+    "name": "@abvy/bac",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Blood alcohol concentration engine: a one-compartment pharmacokinetic model with food-dependent absorption and Michaelis-Menten elimination.",
+    "license": "MIT",
+    "author": "Antonín Wingender",
+    "homepage": "https://github.com/Rednegniw/abvy-bac-engine#readme",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Rednegniw/abvy-bac-engine.git"
+    },
+    "keywords": [
+        "bac",
+        "blood-alcohol",
+        "alcohol",
+        "pharmacokinetics",
+        "michaelis-menten"
+    ],
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "files": [
+        "src"
+    ],
+    "scripts": {
+        "test": "bun test",
+        "check-types": "tsc --noEmit"
+    },
+    "devDependencies": {
+        "@types/bun": "1.3.9",
+        "typescript": "6.0.3"
+    }
+}
