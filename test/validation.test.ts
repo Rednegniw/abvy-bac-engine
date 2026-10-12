@@ -3,8 +3,7 @@ import { bacAt, type Drink, type UserProfile } from '../src'
 import { hrs, sippedDrink, T0 } from './fixtures'
 
 /**
- * The only tests here that compare the model to measured people rather than to
- * itself or to another formula.
+ * The tests that compare the model with measured human data.
  *
  * Jones & Jönsson 1994 (J Forensic Sci 39:1084-93): 10 healthy men, 0.80 g/kg
  * after an overnight fast or immediately after breakfast, crossover.
@@ -12,9 +11,8 @@ import { hrs, sippedDrink, T0 } from './fixtures'
  * The abstract gives neither body sizes nor drinking time, so the fixture uses
  * a 75 kg, 178 cm man drinking over 20 minutes.
  *
- * The bounds below are deliberately loose and symmetric: they record where the
- * model actually stands, so that changing a constant shows up as a movement
- * against real data instead of only against our own fixtures.
+ * The bounds are deliberately loose (±15%) and symmetric: they record where
+ * the model stands, so a constant change shows up against real data.
  */
 describe('validation against measured human BAC', () => {
     const JONES_MAN: UserProfile = {
@@ -46,10 +44,9 @@ describe('validation against measured human BAC', () => {
 
     test('fed peak is within 15% of the measured mean', () => {
         /**
-         * The fed-state first-pass loss (FIRST_PASS_MAX) and elimination boost
-         * (VMAX_FOOD_BOOST) were tuned against this fixture; the symmetric
-         * bound keeps future constant changes honest against measured people
-         * rather than against our own fixtures.
+         * FIRST_PASS_MAX and VMAX_FOOD_BOOST were fitted to this fixture, so
+         * this bound catches a later constant change that drifts away from the
+         * measured data.
          */
         const peak = peakOf(1.0)
 

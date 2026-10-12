@@ -72,7 +72,7 @@ describe('calculateTimeWhenBelowThreshold', () => {
     })
 
     test('returns future Date when BAC is above threshold', () => {
-        // 3 drinks should put us above 0.02% threshold
+        // Three drinks put BAC above the 0.02% threshold
         const drinks: Drink[] = [standardDrink(T0), standardDrink(T0 + 5 * 60_000), standardDrink(T0 + 10 * 60_000)]
         const checkTime = T0 + hrs(0.5) // 30 min after first drink
 
@@ -122,7 +122,6 @@ describe('series', () => {
         const drinks = [standardDrink(T0)]
         const pts = series(T0, hrs(2), 60_000, drinks, MALE_80KG)
 
-        // Check a few points against bacAt
         const checks = [30, 60, 90]
         for (const idx of checks) {
             const seriesVal = pts[idx].y
@@ -256,8 +255,8 @@ describe('findPeakBacInWindow', () => {
 
     /**
      * A window narrower than the 15s sample grid can contain no sample label at
-     * all. Reading only the labels would report zero for a moment where the
-     * user is plainly intoxicated.
+     * all. Reading only the labels would report zero while BAC is clearly
+     * above it.
      */
     test('reports a real peak for a window narrower than the sample grid', () => {
         const drinks = [{ ...standardDrink(T0), alcoholGrams: 28 }]

@@ -84,10 +84,12 @@ export function simulate(input: SimulationInput): SimulationResult {
     const kaSpreadScaled = (KA_EMPTY - KA_FULL) * user.kaMultiplier
     const firstPassScaled = FIRST_PASS_MAX * user.fpFactor
 
+    const gramsToGdl = (grams: number): number => grams / volumeL / 10
+
     // Each drink's stomach contents and pour window, clamped to MIN_POUR_MS
-    const stomachGrams = new Array(drinks.length).fill(0) as number[]
-    const pourMs = new Array(drinks.length).fill(0) as number[]
-    const pourEndMs = new Array(drinks.length).fill(0) as number[]
+    const stomachGrams: number[] = new Array(drinks.length).fill(0)
+    const pourMs: number[] = new Array(drinks.length).fill(0)
+    const pourEndMs: number[] = new Array(drinks.length).fill(0)
     for (let i = 0; i < drinks.length; i++) {
         pourMs[i] = Math.max(drinks[i].end - drinks[i].start, MIN_POUR_MS)
         pourEndMs[i] = drinks[i].start + pourMs[i]
@@ -119,7 +121,7 @@ export function simulate(input: SimulationInput): SimulationResult {
     let nextMealIdx = 0
 
     let bloodGrams = 0
-    const bloodGramsPerDrink = collectPerDrink ? (new Array(drinks.length).fill(0) as number[]) : null
+    const bloodGramsPerDrink: number[] = collectPerDrink ? new Array(drinks.length).fill(0) : []
     const points: BacPoint[] = []
     const perDrinkPoints: BacPoint[][] = collectPerDrink ? drinks.map(() => []) : []
     let peakBac = 0
@@ -136,7 +138,7 @@ export function simulate(input: SimulationInput): SimulationResult {
          * sampling afterwards would label the state at `intervalEnd` as `t`
          * and shift the whole curve one step early.
          */
-        const bac = bloodGrams / volumeL / 10
+        const bac = gramsToGdl(bloodGrams)
         if (peakFromMs !== undefined && t >= peakFromMs && bac > peakBac) {
             peakBac = bac
             peakTime = t
@@ -144,19 +146,19 @@ export function simulate(input: SimulationInput): SimulationResult {
         if (collectPoints) {
             points.push({ x: t, y: bac })
         }
-        if (bloodGramsPerDrink) {
+        if (collectPerDrink) {
             for (let i = 0; i < drinks.length; i++) {
-                perDrinkPoints[i].push({ x: t, y: bloodGramsPerDrink[i] / volumeL / 10 })
+                perDrinkPoints[i].push({ x: t, y: gramsToGdl(bloodGramsPerDrink[i]) })
             }
         }
 
-        // Admit drinks whose pour starts within this interval
+        // 2. Admit drinks whose pour starts within this interval
         while (nextStartIdx < drinks.length && drinks[startOrder[nextStartIdx]].start < intervalEnd) {
             active.push(startOrder[nextStartIdx])
             nextStartIdx++
         }
 
-        // 2. Food state F(t), shared by absorption, first-pass loss and elimination
+        // 3. Food state F(t), shared by absorption, first-pass loss and elimination
         if (t > mealFoodAtMs) {
             mealFood *= Math.exp(-decayPerMs * (t - mealFoodAtMs))
             mealFoodAtMs = t
@@ -175,7 +177,7 @@ export function simulate(input: SimulationInput): SimulationResult {
         const systemicFraction = 1 - firstPassScaled * food
 
         /**
-         * 3. Intake, then absorption, per active drink. Alcohol poured during
+         * 4. Intake, then absorption, per active drink. Alcohol poured during
          * this interval was only in the stomach for part of it, so it is
          * absorbed at half weight (trapezoid rule); without that, how much of
          * a pour is absorbed would depend on the step size, and a 15 s and a
@@ -199,7 +201,7 @@ export function simulate(input: SimulationInput): SimulationResult {
                 const absorbed = Math.min(stomachGrams[i], (stomachGrams[i] - poured / 2) * kaThisStep)
                 stomachGrams[i] -= absorbed
                 bloodGrams += absorbed * systemicFraction
-                if (bloodGramsPerDrink) {
+                if (collectPerDrink) {
                     bloodGramsPerDrink[i] += absorbed * systemicFraction
                 }
             }
@@ -212,14 +214,14 @@ export function simulate(input: SimulationInput): SimulationResult {
             }
         }
 
-        // 4. Michaelis-Menten elimination, with Vmax raised in the fed state
+        // 5. Michaelis-Menten elimination, with Vmax raised in the fed state
         if (bloodGrams > 0) {
             const concGL = bloodGrams / volumeL
             const eliminatedGL = (vmaxPerHour * (1 + VMAX_FOOD_BOOST * food) * intervalHours * concGL) / (KM + concGL)
             const eliminated = eliminatedGL * volumeL
             bloodGrams = Math.max(0, bloodGrams - eliminated)
 
-            if (bloodGramsPerDrink) {
+            if (collectPerDrink) {
                 const totalBefore = bloodGrams + eliminated
                 for (let i = 0; i < drinks.length; i++) {
                     if (bloodGramsPerDrink[i] > 0) {
@@ -231,14 +233,14 @@ export function simulate(input: SimulationInput): SimulationResult {
         }
 
         /**
-         * 5. With nothing pouring, nothing in any stomach and no measurable
+         * 6. With nothing pouring, nothing in any stomach and no measurable
          * blood alcohol, the state stays exactly zero until the next drink
          * starts: fill zero samples on the same grid and resume on the step
          * whose interval contains that start.
          */
         if (active.length === 0 && bloodGrams < BLOOD_INERT_GRAMS) {
             bloodGrams = 0
-            if (bloodGramsPerDrink) bloodGramsPerDrink.fill(0)
+            bloodGramsPerDrink.fill(0)
             const nextStartMs = nextStartIdx < drinks.length ? drinks[startOrder[nextStartIdx]].start : Infinity
 
             let g = t + stepMs
@@ -260,7 +262,7 @@ export function simulate(input: SimulationInput): SimulationResult {
         t += stepMs
     }
 
-    const finalBac = bloodGrams / volumeL / 10
+    const finalBac = gramsToGdl(bloodGrams)
 
     // An `endMs` between samples is integrated but never sampled, so check it for the peak too
     if (peakFromMs !== undefined && endMs >= peakFromMs && finalBac > peakBac) {

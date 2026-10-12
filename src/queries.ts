@@ -23,7 +23,7 @@ import type { BacPoint, Drink, MealEvent, PeakBacResult, UserProfile } from './t
 /** Step used wherever a single precise value is needed. */
 const PRECISE_STEP_MS = 15_000
 
-/** Coarsest step used internally for curves; finer requested steps are honoured. */
+/** Coarsest step used internally for curves; a finer requested step is used as is. */
 const MAX_CURVE_STEP_MS = 60_000
 
 export interface SoberSearchOptions {
@@ -67,8 +67,8 @@ export function bacAt(
 }
 
 /**
- * The BAC curve from `startMs` over `spanMs`, sampled every `stepMs`
- * (both ends included). Drinks before `startMs` are carried into the curve.
+ * The BAC curve sampled every `stepMs` from `startMs` up to `startMs + spanMs`.
+ * Drinks before `startMs` are carried into the curve.
  *
  * @throws RangeError when `stepMs` is not positive.
  */
@@ -88,13 +88,7 @@ export function series(
     }
 
     if (drinks.length === 0) {
-        const steps = Math.floor(spanMs / stepMs)
-        const samples: BacPoint[] = new Array(steps + 1)
-        let t = startMs
-        for (let i = 0; i <= steps; i++, t += stepMs) {
-            samples[i] = { x: t, y: 0 }
-        }
-        return samples
+        return sampleAtInterval([], startMs, spanMs, stepMs)
     }
 
     const earliest = findEarliestDrink(drinks)

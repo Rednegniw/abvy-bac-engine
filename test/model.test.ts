@@ -6,7 +6,6 @@ describe('single standard drink (14g)', () => {
     const drinks = [standardDrink(T0)]
 
     test('peaks around 0.02% for 80kg male', () => {
-        // Sample every minute for 2 hours, find peak
         let peak = 0
         for (let t = T0; t <= T0 + hrs(2); t += 60_000) {
             const bac = bacAt(t, drinks, MALE_80KG)
@@ -250,10 +249,8 @@ describe('edge cases', () => {
 describe('Widmark cross-reference', () => {
     test('peak BAC roughly consistent with Widmark estimate', () => {
         /**
-         * Widmark: BAC = (A / (r * W * 1000)) * 100
-         * where A=grams, r=0.68 (male), W=kg
-         * For 14g: BAC ≈ 14 / (0.68 * 80 * 10) = 0.0257%
-         * Our model should be in the same ballpark
+         * Widmark: BAC (%) = A / (r * W * 10), with A in grams, W in kg and
+         * r = 0.68 for men. For 14 g at 80 kg that is 0.0257%.
          */
         const drinks = [standardDrink(T0)]
         let peak = 0
@@ -271,8 +268,9 @@ describe('Widmark cross-reference', () => {
 describe('MM tail behavior', () => {
     test('elimination rate decreases at low BAC', () => {
         /**
-         * Use a large dose so the declining phase spans a wide BAC range.
-         * Measure well after absorption is complete (ka is about 3.6/h on the default light stomach, so 99% is absorbed within about 1.3 h).
+         * A large dose, so the falling curve spans a wide BAC range. Both
+         * windows start after absorption has finished: ka is about 3.6/h on
+         * the default light stomach, so 99% is absorbed within 1.3 h.
          */
         const drinks = [{ ...standardDrink(T0), alcoholGrams: 70 }] // 5 standard drinks at once
 
@@ -291,7 +289,7 @@ describe('MM tail behavior', () => {
         const rateLow = (bac3 - bac4) / 0.25
 
         // MM predicts slower elimination at lower concentration
-        expect(bac1).toBeGreaterThan(bac3) // confirm BAC is actually lower in second window
+        expect(bac1).toBeGreaterThan(bac3) // BAC is lower in the second window
         expect(rateLow).toBeLessThan(rateHigh)
     })
 })

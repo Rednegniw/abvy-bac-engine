@@ -14,7 +14,7 @@ describe('simulation interval invariants', () => {
     /**
      * The peak comparison above is nearly blind: the curve is flat at its
      * summit, so a whole-step timing error barely moves it. The rising limb is
-     * where the two engines actually diverge, so compare them there, sample by
+     * where the two step sizes diverge, so compare them there, sample by
      * sample.
      */
     test('sampled series agrees with bacAt sample by sample across the rising limb', () => {
@@ -47,9 +47,9 @@ describe('simulation interval invariants', () => {
         const drinks = [{ ...standardDrink(T0), alcoholGrams: 28 }]
 
         /**
-         * Deliberately on the rising limb, so the window's maximum IS its end
-         * point and the off-grid tail is load-bearing. A window reaching past
-         * the peak would pass on the interior maximum alone and guard nothing.
+         * Deliberately on the rising limb, so the window's maximum is its end
+         * point and only the off-grid tail can supply it. A window reaching
+         * past the peak would pass on the interior maximum alone.
          */
         const offGridEnd = T0 + 20 * 60_000 + 7_250
         const peak = findPeakBacInWindow(drinks, MALE_80KG, T0, offGridEnd, [], 0)

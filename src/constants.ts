@@ -1,7 +1,8 @@
 /**
- * Every model parameter lives here and nowhere else. Concentrations are grams
- * per liter of blood (g/L) inside the model; BAC outputs are g/dL (0.08 means
- * 0.08%). Sources and derivations are in docs/MODEL.md.
+ * Model parameters and numerical settings (the Watson coefficients are in
+ * physiology.ts). Concentrations inside the model are grams per liter of
+ * blood; BAC outputs are g/dL (0.08 means 0.08%). Sources are in
+ * docs/MODEL.md.
  *
  * Abvy's iOS widgets and Wear OS app run Swift and Kotlin ports of this
  * engine; differential tests in the app repository fail when a value here
@@ -23,7 +24,7 @@ export const BLOOD_WATER_FRACTION = 0.806
 /** Maximum elimination rate, g/L per hour, before the personal metabolicFactor. */
 export const VMAX_BASE = 0.17
 
-/** Michaelis constant, g/L: below it elimination slows from roughly constant to roughly proportional. */
+/** Michaelis constant, g/L. Well above it elimination is nearly constant; well below it, nearly proportional to concentration. */
 export const KM = 0.05
 
 // Absorption

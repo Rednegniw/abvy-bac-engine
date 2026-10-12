@@ -1,12 +1,14 @@
 # The model
 
-A one-compartment pharmacokinetic model of blood alcohol concentration with first-order absorption from a per-drink stomach compartment, a time-varying food state, food-dependent first-pass loss, a volume of distribution from total body water, and Michaelis-Menten elimination. This page gives the equations, every parameter with its source, how the equations are integrated, and how the result compares with measured people.
+The engine is a one-compartment pharmacokinetic model of blood alcohol concentration. Each drink has its own stomach compartment with first-order absorption; a time-varying food state controls absorption speed, first-pass loss and an increase in elimination; the volume of distribution comes from total body water; elimination follows Michaelis-Menten kinetics. This page covers the equations, the source of each parameter, the numerical method, and validation against measured data.
 
 ## Equations
 
 Times are in hours, amounts in grams, concentrations in g/L of blood.
 
-**Volume of distribution.** Total body water from the Watson equations, with age at the first drink, scaled to the blood-equivalent volume:
+### Volume of distribution
+
+Total body water from the Watson equations (age taken at the first drink), divided by the water fraction of blood:
 
 ```
 TBW (male)   = 2.447 - 0.09516 * age + 0.1074 * height_cm + 0.3362 * weight_kg
@@ -14,22 +16,28 @@ TBW (female) = -2.097 + 0.1069 * height_cm + 0.2466 * weight_kg
 V = TBW / 0.806
 ```
 
-**Food state.** A number between 0 (empty stomach) and 1 (full). The stomach at the first drink, F0, and every meal j of size L_j eaten at t_j each decay exponentially:
+### Food state
+
+A number between 0 (empty stomach) and 1 (full). The stomach contents at the first drink, F0, and each meal j of size L_j eaten at t_j decay exponentially:
 
 ```
 F(t) = min(1, F0 * exp(-λ (t - t0)) + Σ_{t_j <= t} L_j * exp(-λ (t - t_j))),   λ = 0.347 / h
 ```
 
-Here t0 is the start of the first drink. Meals before it still count, on top of F0, so a meal belongs either in F0 (`initialFoodLevel`) or in the meal list, not both.
+t0 is the start of the first drink. Meals eaten before t0 are added on top of F0, so each meal should be counted either in F0 (`initialFoodLevel`) or in the meal list.
 
-**Intake and absorption.** Drink i delivers A_i grams at a constant rate over its pour window P_i (at least one minute) into its own stomach compartment S_i. All compartments empty into the blood at the same rate:
+### Intake and absorption
+
+Drink i delivers A_i grams at a constant rate over its pour window P_i (at least one minute) into its stomach compartment S_i. All compartments are absorbed at the same rate:
 
 ```
 ka(t) = kaMultiplier * (KA_EMPTY - (KA_EMPTY - KA_FULL) * F(t))
 dS_i/dt = A_i / P_i (while pouring) - ka(t) * S_i
 ```
 
-**Blood.** Only part of the absorbed alcohol reaches the systemic circulation; the rest is first-pass metabolism, which grows with food. Elimination is saturable:
+### Blood
+
+Part of the absorbed alcohol is lost to first-pass metabolism, which increases with food. Elimination is saturable:
 
 ```
 f_sys(t) = 1 - FIRST_PASS_MAX * fpFactor * F(t)
@@ -39,13 +47,15 @@ dB/dt = f_sys(t) * ka(t) * Σ S_i  -  V * Vmax(t) * C / (KM + C)
 BAC (g/dL) = C / 10
 ```
 
-Elimination runs from the first moment there is alcohol in the blood, including while drinks are still being absorbed, so there is no separate "absorption phase" and "elimination phase".
+Elimination starts as soon as there is alcohol in the blood and continues while later drinks are still being absorbed; there are no separate absorption and elimination phases.
 
-**Per-drink curves.** For `perDrinkSeries`, each drink's blood alcohol is tracked separately and each step's elimination is split between drinks in proportion to their share of B. The per-drink curves add up to the total.
+### Per-drink curves
+
+`perDrinkSeries` tracks each drink's share of B separately and splits each step's elimination between drinks in proportion to those shares, so the per-drink curves sum to the total.
 
 ## Parameters
 
-Every constant below is exported from the package, apart from the Watson coefficients (inside `watsonTbw`) and the clearance bound (inside `maxBacClearanceMs`). "Calibrated" means chosen so that the engine reproduces measured data; "assumption" means no study pins the number down.
+All constants below are exported, except the Watson coefficients (inside `watsonTbw`) and the clearance bound (inside `maxBacClearanceMs`). "Calibrated" means fitted so that the engine reproduces measured data; "assumption" means no study determines the value.
 
 | Constant | Value | Basis |
 | --- | --- | --- |
@@ -69,50 +79,57 @@ Every constant below is exported from the package, apart from the Watson coeffic
 
 ## Numerical method
 
-The equations are integrated with fixed-step explicit (forward Euler) steps: 15 seconds wherever a single precise value is needed (`bacAt`, `findPeakBacInWindow`, `findSoberTime` by default) and 60 seconds, or the requested sampling step if finer, for curves and the peak search.
+The equations are integrated with a fixed-step explicit (forward Euler) method. Single values (`bacAt`, `findPeakBacInWindow`, and `findSoberTime` by default) use 15-second steps; curves and the peak search use 60-second steps, or the requested sampling step if it is finer.
 
-- Alcohol poured during a step was only in the stomach for part of it, so it is absorbed at half weight that step (trapezoid rule). Without this, how much of a short pour is absorbed would depend on the step size.
+- Alcohol poured during a step has only been in the stomach for part of that step, so it is absorbed at half weight (trapezoid rule). This keeps the absorbed amount of a short pour independent of the step size.
 - A step never absorbs more than the stomach holds.
 - Stretches where nothing is pouring, every stomach is empty and blood alcohol is below 1e-10 g (about 2e-13 g/dL) are treated as zero and skipped until the next drink.
 - Each sample holds the state at its own timestamp, before the step that follows it is integrated.
 - `series` and `perDrinkSeries` integrate on a grid that starts at the first drink (or at `startMs`, if that is earlier) and report, for each requested time, the latest integrated sample at or before it. When `startMs` falls between grid points of an evening that is already under way, samples can lag by up to one integration step (60 s).
 
-`test/convergence.test.ts` compares both step sizes with a 1-second integration of the same equations, over a shot, a mixed evening and ten drinks in five hours, for an average man and a fast-absorbing profile on empty, light and full stomachs. It holds 15-second steps within 0.5% of the peak, 0.0005 g/dL at every sample and 1 minute of the sober time, and 60-second steps within 1.5%, 0.0015 g/dL and 2.5 minutes. The worst cases measured are about 0.3%, 0.0003 g/dL and 35 seconds for 15-second steps, and 1.3%, 0.0013 g/dL and 2 minutes for 60-second steps. The coarse error in the sober time leans early rather than late, because explicit steps slightly over-eliminate on a falling curve, so 60-second steps are only used where results are shown to the minute and carry the model's much larger uncertainty anyway.
+`test/convergence.test.ts` compares both step sizes with a 1-second integration of the same equations. It covers a single shot, a mixed evening and ten drinks over five hours, for an average man and a fast-absorbing profile, on empty, light and full stomachs.
+
+| Step | Tested bound: peak, any sample, sober time | Worst case measured |
+| --- | --- | --- |
+| 15 s | 0.5%, 0.0005 g/dL, 1 min | 0.3%, 0.0003 g/dL, 35 s |
+| 60 s | 1.5%, 0.0015 g/dL, 2.5 min | 1.3%, 0.0013 g/dL, 2 min |
+
+With 60-second steps the sober time tends to come out slightly early, because explicit steps over-eliminate a little on a falling curve. Abvy only uses them where times are shown to the minute.
 
 ## Validation
 
 ### Measured people
 
-Jones & Jönsson 1994 gave ten healthy men 0.80 g/kg of ethanol, once after an overnight fast and once immediately after breakfast. The mean peak BAC was 104 ± 16.5 mg/dL fasted and 67 ± 9.5 mg/dL after the meal. `test/validation.test.ts` replays that dose as 60 g of ethanol drunk over 20 minutes by a 75 kg, 178 cm, 34-year-old man with every multiplier at 1, no meal events, and the stomach at the first drink set to empty (`initialFoodLevel` 0) for the fasted arm and full (1) for the fed arm. The peak is read from `bacAt` every 30 seconds. The abstract gives neither individual body sizes nor the drinking time, so those are assumptions:
+In Jones & Jönsson 1994, ten healthy men drank 0.80 g/kg of ethanol once after an overnight fast and once immediately after breakfast. Mean peak BAC was 104 ± 16.5 mg/dL fasted and 67 ± 9.5 mg/dL fed. `test/validation.test.ts` reproduces this with 60 g of ethanol drunk over 20 minutes by a 75 kg, 178 cm, 34-year-old man, all multipliers at 1, no meal events, and `initialFoodLevel` 0 (fasted) or 1 (fed). The peak is read from `bacAt` every 30 seconds. The abstract does not report body measurements or drinking time, so those values are assumed.
 
 | | Measured mean | Engine | Difference |
 | --- | --- | --- | --- |
 | Fasted | 0.104 g/dL | 0.094 g/dL | -9% |
 | Fed | 0.067 g/dL | 0.068 g/dL | +1% |
 
-The fed match is by construction: `FIRST_PASS_MAX` and `VMAX_FOOD_BOOST` were tuned to it. The fasted gap is a genuine miss, and in the direction that understates BAC. The tests hold both within ±15% of the measured means, so a parameter change that moves the engine away from real people fails the suite.
+`FIRST_PASS_MAX` and `VMAX_FOOD_BOOST` were fitted to the fed arm, so the fed result is not an independent check. The fasted peak is 9% low. The tests require both peaks to stay within ±15% of the measured means, so a parameter change that moves the engine away from the data fails the suite.
 
-On the falling curve the engine eliminates about 0.016 g/dL per hour on an empty stomach, close to the 0.015 g/dL/h Jones 2010 gives as a good population average.
+On the falling part of the curve the engine eliminates about 0.016 g/dL per hour on an empty stomach. Jones 2010 gives 0.015 g/dL/h as a typical population value.
 
 ### Behavior
 
-The test suite (`test/`) also pins qualitative behavior: doubling the dose roughly doubles the peak (saturable elimination keeps the ratio from being exact), a 60 kg woman reaches a higher BAC than an 80 kg man from the same drink, a full stomach gives a lower peak, a meal eaten after drinking lowers the remaining peak, a shot peaks higher than the same alcohol sipped over 30 minutes, elimination slows at low BAC, and a months-old drink contributes exactly nothing today.
+The test suite also checks qualitative behavior: doubling the dose roughly doubles the peak (saturable elimination keeps the ratio from being exact), a 60 kg woman reaches a higher BAC than an 80 kg man from the same drink, a full stomach gives a lower peak, a meal eaten after drinking lowers the remaining peak, a shot peaks higher than the same alcohol sipped over 30 minutes, elimination slows at low BAC, and a months-old drink contributes exactly nothing today.
 
 ## Limitations
 
-Known gaps, roughly in order of how much they matter:
+In rough order of importance:
 
-1. **The estimate likely runs low for an average fasted drinker.** Three choices point the same way: the fasted peak is 9% under the Jones & Jönsson mean, elimination sits at the fast end of the published ranges, and `BLOOD_WATER_FRACTION` is a by-mass value where a by-volume value would give about 5% higher BAC. The slow edge of the uncertainty range (elimination at 80%) narrows the fasted-peak gap from 9.3% to 6.7% without closing it; Abvy shows the range by default.
-2. **Bariatric surgery is understated.** Across sexes, body weights of 55-100 kg and single drinks of 14-42 g, the bariatric presets raise the peak by only 4-12% on an empty stomach (23-53% after food), against about 2 times in two studies from one group and 1.28 times in an independent one. Part of the measured jump is arterial blood peaking before alcohol has spread through the body, which a one-compartment model cannot produce at any absorption rate. Treat bariatric estimates as a lower bound.
-3. **The GLP-1 preset rests on one small pilot.** Over the same range of people and doses it lowers the predicted peak by 10-26% on an empty stomach and 17-38% after food. If the real effect is smaller, the estimate is too low.
-4. **One food state drives three effects.** Absorption, first-pass loss and the elimination boost all follow the same F(t) and the same 2-hour decay. Büsker et al. 2023 found no significant decline of the elimination boost over time, so the boost may last longer than modeled.
-5. **One compartment.** The best population fits use two compartments (Büsker et al. 2023), arterial and venous concentrations differ as a function of time after drinking (Norberg et al. 2003), and so do capillary and venous ones (Büsker et al. 2023). The engine has a single blood concentration.
-6. **Drinks are grams and meals are a size.** Beverage type, concentration and carbonation, and meal composition (Jones et al. 1997 found the peak after a small dose fell from 30.8 mg/dL fasted to 13.3-17.7 mg/dL depending on the meal), are not modeled.
-7. **Population averages.** Elimination rates vary several-fold between people and from day to day within one person. Abvy can personalize `metabolicFactor` and `kaMultiplier` from a user's breathalyzer readings; that calibration is not part of this package.
-8. **Sex is an input to the Watson equations,** which were fitted separately for men and women. People whose body composition sits between the two can try both.
-9. **The validation data are small.** One study of ten men anchors the absolute level. More measured datasets, especially of women and of realistic multi-drink evenings, would make the engine better; the README says what to send.
-10. **Inputs are not validated.** The Watson equations describe adults; zero or implausible body sizes give meaningless numbers rather than errors.
-11. **BAC is not impairment.** The engine says nothing about tolerance, reaction time or whether anyone is fit to drive.
+1. Estimates are probably too low for an average person drinking on an empty stomach. Three factors point that way: the fasted peak is 9% below the Jones & Jönsson mean, elimination is at the fast end of the published ranges, and `BLOOD_WATER_FRACTION` is a by-mass value (a by-volume value would give about 5% higher BAC). The slow edge of the uncertainty range (elimination at 80%) reduces the fasted-peak gap from 9.3% to 6.7%.
+2. Peaks after bariatric surgery are underestimated. Across both sexes, body weights of 55-100 kg and single drinks of 14-42 g, the bariatric presets raise the peak by 4-12% on an empty stomach and 23-53% after food. Measured increases are about 2 times in two studies from one group and 1.28 times in an independent study. Part of the measured increase is arterial blood peaking before alcohol has distributed through the body, which a one-compartment model cannot produce with any absorption rate. Treat bariatric estimates as a lower bound.
+3. The GLP-1 preset is based on one small pilot study. Over the same range of people and doses it lowers the predicted peak by 10-26% on an empty stomach and 17-38% after food; if the real effect is smaller, estimates for these users are too low.
+4. A single food state drives absorption, first-pass loss and the elimination increase, all with the same 2-hour decay. Büsker et al. 2023 found no significant decline of the elimination increase over time, so it may last longer than modeled.
+5. The model has one compartment. Population fits are better with two (Büsker et al. 2023), and arterial, venous and capillary concentrations differ during absorption (Norberg et al. 2003; Büsker et al. 2023).
+6. Drinks are described only by grams of alcohol and meals only by size. Beverage type, concentration, carbonation and meal composition are not modeled; Jones et al. 1997 measured peaks of 13.3-17.7 mg/dL after different meals against 30.8 mg/dL fasted for the same small dose.
+7. Parameters are population averages. Elimination rates vary several-fold between people and from day to day. Abvy can fit `metabolicFactor` and `kaMultiplier` to a user's breathalyzer readings; that calibration is not part of this package.
+8. Sex selects one of the two Watson equations, which were fitted separately for men and women. For body compositions between the two, both can be tried.
+9. Validation relies on one study of ten men. Data for women and for realistic evenings with several drinks would improve it; the README describes what to send.
+10. Inputs are not validated. The Watson equations describe adults, and zero or implausible body measurements give meaningless results rather than errors.
+11. BAC is not impairment. The engine says nothing about tolerance, reaction time or fitness to drive.
 
 ## References
 
